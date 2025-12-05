@@ -1,101 +1,106 @@
+from flask import Flask, request, jsonify
+from flask_restful import Api, Resource
+import requests
+import json
+from datetime import datetime
 import os
 
-from flask import Flask, jsonify
-from flask_restful import Api, Resource, reqparse
-from flask_talisman import Talisman
-from api_activity._constants import PROJECT_ROOT
-from api_activity.db import Database  
-from flask_bcrypt import Bcrypt
-from flask import Flask, jsonify, request, g
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
 
 
 
-_KEYFILE_PATH = os.path.join(PROJECT_ROOT, "MyKey.pem")
-_CERTIFICATE_PATH = os.path.join(PROJECT_ROOT, "MyCertificate.crt")
+app = Flask(__name__)
+api = Api(app)
 
 
-# Create the "hello" resource
-class Hello(Resource):
-    """A simple resource that for returning a hello message."""
+def save_response(filename, data):
+    record = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "response": data
+    }
 
-    # Get is a special method for a resource.
+    with open(filename, "a") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+class Weather(Resource):
     def get(self):
-        return jsonify({"message": "Hello World!"})
+        lat = request.args.get("lat")
+        lon = request.args.get("lon")
+        unit = request.args.get("unit")
+
+        if not lat or not lon or not unit:
+            return {"error": "Missing required query parameters"}, 400
+
+        try:
+            lat = float(lat)
+            lon = float(lon)
+        except ValueError:
+            return {"error": "lat and lon must be numbers"}, 400
+
+        if unit not in ["fahrenheit", "celsius"]:
+            return {"error": "unit must be 'fahrenheit' or 'celsius'"}, 400
+
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": "temperature_2m",
+            "temperature_unit": unit
+        }
+
+        response = requests.get(url, params=params)
+
+        data = response.json()
+        save_response("data:get_responses.jsonl", data)
+        return data, response.status_code
 
 
-class Square(Resource):
-    """A simple resource that calculates the area of a square."""
 
-    def get(self, num):
-        return jsonify({"Shape": __class__.__name__, "Area": num * num})
+    def post(self):
+        data = request.get_json()
 
+        if not data:
+            return {"error": "Missing JSON body"}, 400
 
-class Echo(Resource):
-    """A simple resource that echoes the arguments passed to it."""
+        lat = data.get("lat")
+        lon = data.get("lon")
+        unit = data.get("unit")
 
-    def get(self):
-        parser = reqparse.RequestParser()
-        parser.add_argument("arg1", type=str, location="args")
-        parser.add_argument("arg2", type=str, location="args")
+        if lat is None or lon is None or unit is None:
+            return {"error": "Missing required JSON fields"}, 400
 
-        arguments = parser.parse_args()
+        try:
+            lat = float(lat)
+            lon = float(lon)
+        except ValueError:
+            return {"error": "lat and lon must be numbers"}, 400
 
-        # Return the arguments as JSON
-        return jsonify(arguments)
+        if unit not in ["fahrenheit", "celsius"]:
+            return {"error": "unit must be 'fahrenheit' or 'celsius'"}, 400
 
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": "temperature_2m",
+            "temperature_unit": unit
+        }
 
-def instantiate_app() -> Flask:
-    """Instantiate a new flask app"""
-    # Create the flask app
-    app = Flask(__name__)
-    return app
+        response = requests.get(url, params=params)
 
-def get_db():
-    if "db" not in g:
-        g.db = Database()
-    return g.db
-
-
-def initialize_api(app: Flask) -> Api:
-    """Initialize the api for the app and add resources to it"""
-
-    # Create the API object
-    api = Api(app)
-
-    # Add the resources we want
-    api.add_resource(Hello, "/")
-    api.add_resource(Square, "/square/<int:num>")
-    api.add_resource(Echo, "/echo")
-    api.add_resource(Register, "/register")
-    return api
+        data = response.json()
+        save_response("data:post_responses.jsonl", data)
+        return data, response.status_code
 
 
-def create_and_serve(debug: bool = True):
-    """Construct the app together with its api and then serves it"""
-    app = instantiate_app()
-    initialize_api(app)
-    app.run(debug=debug)
 
 
-def run(app, debug=True):
-    """Run the app"""
 
-class Register(Resource):
-    def put(self):
-        parser = reqparse.RequestParser()
-        parser.add_argument("username", type=str, required=True)
-        parser.add_argument("password", type=str, required=True)
-        args = parser.parse_args()
-
-        hashed_pwd = Bcrypt().generate_password_hash(
-            args["password"]
-        ).decode("utf-8")
-
-        db = get_db()
-        if db.add_user(args["username"], hashed_pwd):
-            return {"msg": "User registered"}, 201
-        return {"msg": "User already exists"}, 409
+api.add_resource(Weather, "/weather")
 
 
 if __name__ == "__main__":
-    run(create_and_serve())
+    app.run(debug=True)
