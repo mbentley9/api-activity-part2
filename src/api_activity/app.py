@@ -3,6 +3,11 @@ from flask_restful import Api, Resource
 import requests
 import json
 from datetime import datetime
+import os
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
 
 
 
@@ -48,8 +53,8 @@ class Weather(Resource):
 
         response = requests.get(url, params=params)
 
-        data = {}
-        save_response(os.path.join(DATA_DIR, "get_responses.jsonl"), data)
+        data = response.json()
+        save_response("data:get_responses.jsonl", data)
         return data, response.status_code
 
 
@@ -89,6 +94,9 @@ class Weather(Resource):
         data = response.json()
         save_response("data:post_responses.jsonl", data)
         return data, response.status_code
+
+
+
 
 
 api.add_resource(Weather, "/weather")
