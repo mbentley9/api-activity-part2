@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+activity.db
+MyKey.pem
+MyCertificate.crt
+.env
